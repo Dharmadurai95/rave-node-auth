@@ -3,21 +3,23 @@ require("./config/database").connect();
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const cors = require('cors')
 
 const User = require("./model/user");
 const auth = require("./middleware/auth");
 
 const app = express();
+app.use(cors())
 
 app.use(express.json({ limit: "50mb" }));
 
 app.post("/register", async (req, res) => {
   try {
     // Get user input
-    const { first_name, last_name, email, password } = req.body;
+    const { email, password } = req.body;
 
     // Validate user input
-    if (!(email && password && first_name && last_name)) {
+    if (!(email && password)) {
       res.status(400).send("All input is required");
     }
 
@@ -34,8 +36,6 @@ app.post("/register", async (req, res) => {
 
     // Create user in our database
     const user = await User.create({
-      first_name,
-      last_name,
       email: email.toLowerCase(), // sanitize: convert email to lowercase
       password: encryptedPassword,
     });
@@ -45,14 +45,15 @@ app.post("/register", async (req, res) => {
       { user_id: user._id, email },
       process.env.TOKEN_KEY,
       {
-        expiresIn: "2h",
+        expiresIn: "24h",
       }
     );
     // save user token
     user.token = token;
-
+    user.save()
     // return new user
-    res.status(201).json(user);
+    const returnData = { email: user.email, token: user.token }
+    res.status(201).send(returnData);
   } catch (err) {
     console.log(err);
   }
@@ -76,7 +77,7 @@ app.post("/login", async (req, res) => {
         { user_id: user._id, email },
         process.env.TOKEN_KEY,
         {
-          expiresIn: "2h",
+          expiresIn: "24h",
         }
       );
 
@@ -84,20 +85,31 @@ app.post("/login", async (req, res) => {
       user.token = token;
 
       // user
-      res.status(200).json(user);
-    }
-    res.status(400).send("Invalid Credentials");
+      user.save()
+      const returnData = { email: user.email, token: user.token }
+      res.status(200).send(returnData);
+    }else  res.status(400).send("Invalid Credentials");
   } catch (err) {
     console.log(err);
   }
 });
+
+app.post('/logout', async (req, res) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email });
+  user.token = ''
+  console.log(user)
+  user.save();
+  res.send("Successfully logged out")
+})
 
 app.get("/welcome", auth, (req, res) => {
   res.status(200).send("Welcome 🙌 ");
 });
 
 // This should be the last route else any after it won't work
-app.use("*", (req, res) => {
+app.use("/getPage", (req, res) => {
   res.status(404).json({
     success: "false",
     message: "Page not found",
